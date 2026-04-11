@@ -482,16 +482,29 @@ defmodule ICal.Deserialize do
   end
 
   def to_date_in_timezone(date_string, timezone) do
-    with_timezone =
-      if String.ends_with?(date_string, "Z") do
-        date_string <> timezone
-      else
-        date_string <> "Z" <> timezone
-      end
+    case date_string do
+      <<year::binary-4, month::binary-2, day::binary-2, "T", hour::binary-2, minute::binary-2,
+        second::binary-2, _::binary>> ->
+        date =
+          Date.new!(String.to_integer(year), String.to_integer(month), String.to_integer(day))
 
-    case Timex.parse(with_timezone, "{YYYY}{0M}{0D}T{h24}{m}{s}Z{Zname}") do
-      {:ok, date} -> date
-      _ -> nil
+        time =
+          Time.new!(String.to_integer(hour), String.to_integer(minute), String.to_integer(second))
+
+        # During DST transitions, wall clock times can be ambiguous (clocks
+        # fall back, so the time occurs twice) or in a gap (clocks spring
+        # forward, so the time never exists). For ambiguous times we take the
+        # post-transition instant; for gap times we take the first valid
+        # instant after the gap.
+        case DateTime.new(date, time, timezone) do
+          {:ok, dt} -> dt
+          {:ambiguous, _first, second} -> second
+          {:gap, _just_before, just_after} -> just_after
+          _ -> nil
+        end
+
+      _ ->
+        nil
     end
   end
 
