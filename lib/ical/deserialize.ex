@@ -491,11 +491,21 @@ defmodule ICal.Deserialize do
         time =
           Time.new!(String.to_integer(hour), String.to_integer(minute), String.to_integer(second))
 
-        # During DST transitions, wall clock times can be ambiguous (clocks
-        # fall back, so the time occurs twice) or in a gap (clocks spring
-        # forward, so the time never exists). For ambiguous times we take the
-        # post-transition instant; for gap times we take the first valid
-        # instant after the gap.
+        # RFC 5545 §3.3.5 defines how DST edge cases should be handled:
+        #
+        # Ambiguous (fall-back, clocks go back — time occurs twice): "the
+        # DATE-TIME value refers to the first occurrence of the referenced
+        # time." The first occurrence is the daylight (pre-transition) instant.
+        #
+        # Gap (spring-forward, clocks go forward — time never exists): "the
+        # DATE-TIME value is interpreted using the UTC offset before the gap."
+        # e.g. 2:30 AM in a spring-forward gap → apply pre-gap offset (EST) to
+        # get UTC, then express in the post-gap offset (EDT) → 3:30 AM EDT.
+        #
+        # TODO: the current implementation does not comply with RFC 5545 §3.3.5.
+        # For ambiguous times it returns the second (post-transition) occurrence
+        # instead of the first; for gap times it returns just_after (the first
+        # valid instant after the gap) instead of applying the pre-gap offset.
         case DateTime.new(date, time, timezone) do
           {:ok, dt} -> dt
           {:ambiguous, _first, second} -> second
